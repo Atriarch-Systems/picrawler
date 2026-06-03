@@ -273,6 +273,18 @@ def volume():
     return jsonify(ok=True, level=lvl)
 
 
+def _enable_amp():
+    """Power the robot-hat speaker amplifier (pinctrl-held, persists). Without
+    this the I2S DAC plays into a disabled amp = silence."""
+    try:
+        from robot_hat.utils import enable_speaker
+        enable_speaker()
+        print("speaker amp enabled")
+    except Exception as e:
+        print("enable_speaker failed:", e)
+
+
 if __name__ == "__main__":
     print("spiderquad-agentd on :%d  mic=%s spk=%s" % (PORT, MIC, SPK))
+    _enable_amp()
     app.run(host="0.0.0.0", port=PORT, threaded=True)
