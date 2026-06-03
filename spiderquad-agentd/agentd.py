@@ -21,6 +21,13 @@ MIC = os.environ.get("SQ_MIC", "plughw:3,0")
 SPK = os.environ.get("SQ_SPK", "plughw:CARD=sndrpihifiberry,DEV=0")
 PORT = int(os.environ.get("SQ_PORT", "8970"))
 
+# Brownout guard: high-current behaviors are refused below this pack voltage.
+# (Robot HAT ~5V/3A can't cover big multi-servo surges on a sagging battery.)
+SURGE_ACTIONS = {"excited", "push_up", "twist"}
+MIN_SURGE_V = float(os.environ.get("SQ_MIN_SURGE_V", "6.9"))
+# Disabled outright: dance's surge wedges the HAT MCU/ADC (battery read drops to 0).
+DISABLED_ACTIONS = {"dance"}
+
 _lock_motion = threading.Lock()
 _lock_cam = threading.Lock()
 _lock_audio = threading.Lock()
@@ -183,7 +190,7 @@ def move():
     action = j.get("action")
     if not action:
         return jsonify(error="action required (forward/backward/turn left/turn right/...)"), 400
-    steps = int(j.get("steps", 1)); speed = int(j.get("speed", 60))
+    steps = int(j.get("steps", 1)); speed = int(j.get("speed", 50))
     with _lock_motion:
         c = crawler()
         if j.get("auto_stand"):
@@ -198,7 +205,9 @@ def move():
 def pose():
     global _standing
     j = request.get_json(force=True, silent=True) or {}
-    speed = int(j.get("speed", 45))
+    # gentler default sweep (lower speed -> more interpolation steps -> lower
+    # peak current on the all-legs-together stand/sit "zeroing" move)
+    speed = int(j.get("speed", 32))
     with _lock_motion:
         c = crawler()
         if "name" in j:
@@ -217,7 +226,7 @@ def behaviors_list():
         locomotion=["forward", "backward", "turn left", "turn right",
                     "turn left angle", "turn right angle"],
         poses=["stand", "sit"],
-        actions=["dance"],
+        actions=[],
         expressions=sorted(behaviors.EXPRESSIONS.keys()),
     )
 
@@ -231,8 +240,15 @@ def action():
     name = (j.get("name") or "").strip()
     if not name:
         return jsonify(error="name required", hint="GET /behaviors"), 400
+    if name in DISABLED_ACTIONS:
+        return jsonify(error=f"'{name}' is disabled (surge wedges the HAT)", action=name), 409
     speed = j.get("speed")
     steps = int(j.get("steps", 1))
+    if name in SURGE_ACTIONS:
+        bv = _battery().get("battery_v")
+        if bv is not None and bv < MIN_SURGE_V:
+            return jsonify(error="battery too low for high-surge action",
+                           battery_v=bv, min_surge_v=MIN_SURGE_V, action=name), 409
     with _lock_motion:
         c = crawler()
         if name in behaviors.EXPRESSIONS:
@@ -243,8 +259,8 @@ def action():
                 fn(c)
             _standing = name not in behaviors.NON_STANDING
         elif name in ("forward", "backward", "turn left", "turn right",
-                      "turn left angle", "turn right angle", "dance"):
-            c.do_action(name, steps, int(speed) if speed else 60)
+                      "turn left angle", "turn right angle"):
+            c.do_action(name, steps, int(speed) if speed else 50)
             _standing = True
         elif name in ("stand", "sit"):
             c.do_step(name, int(speed) if speed else 45)

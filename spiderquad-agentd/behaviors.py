@@ -14,9 +14,28 @@ so the daemon can track pose state correctly.
 from time import sleep
 
 
-def _seq(spider, frames, speed):
-    for coord in frames:
-        spider.do_step(coord, speed)
+def _lerp(a, b, t):
+    """Linear-interpolate two 4-leg [x,y,z] poses at fraction t."""
+    return [[a[i][k] + (b[i][k] - a[i][k]) * t for k in range(3)] for i in range(len(a))]
+
+
+def _seq(spider, frames, speed, steps=5, dt=0.0):
+    """Play keyframes with coordinate interpolation between consecutive frames.
+
+    `steps` sub-frames are inserted per transition -> smoother motion AND smaller
+    per-step servo deltas (gentler current draw). `dt` optionally paces each
+    sub-frame. steps=1 reproduces the old chunky behavior.
+    """
+    if not frames:
+        return
+    spider.do_step(frames[0], speed)
+    prev = frames[0]
+    for frame in frames[1:]:
+        for s in range(1, steps + 1):
+            spider.do_step(_lerp(prev, frame, s / steps), speed)
+            if dt:
+                sleep(dt)
+        prev = frame
 
 
 def wave(spider, speed=58):
@@ -52,20 +71,18 @@ def shake_hand(spider, speed=52):
     _seq(spider, frames, speed)
 
 
-def excited(spider, speed=40):
+def excited(spider, speed=30):
+    # DETUNED for power: smaller bounce (-44..-60 vs -30..-80), slower, fewer
+    # cycles, longer settle -> lower peak servo current (avoids brownout).
     frames = [
         [[45, 45, -50], [45, 0, -50], [45, 0, -50], [45, 45, -50]],
-        [[45, 45, -30], [45, 0, -30], [45, 0, -30], [45, 45, -30]],
-        [[45, 45, -80], [45, 0, -80], [45, 0, -80], [45, 45, -80]],
-        [[45, 45, -30], [45, 0, -30], [45, 0, -30], [45, 45, -30]],
-        [[45, 45, -80], [45, 0, -80], [45, 0, -80], [45, 45, -80]],
-        [[45, 45, -30], [45, 0, -30], [45, 0, -30], [45, 45, -30]],
-        [[45, 45, -80], [45, 0, -80], [45, 0, -80], [45, 45, -80]],
+        [[45, 45, -44], [45, 0, -44], [45, 0, -44], [45, 45, -44]],
+        [[45, 45, -60], [45, 0, -60], [45, 0, -60], [45, 45, -60]],
+        [[45, 45, -44], [45, 0, -44], [45, 0, -44], [45, 45, -44]],
+        [[45, 45, -60], [45, 0, -60], [45, 0, -60], [45, 45, -60]],
         [[45, 45, -50], [45, 0, -50], [45, 0, -50], [45, 45, -50]],
     ]
-    for coord in frames:
-        spider.do_step(coord, speed)
-        sleep(0.08)
+    _seq(spider, frames, speed, steps=4, dt=0.05)
 
 
 def nod(spider, speed=45):
@@ -159,7 +176,8 @@ def play_dead(spider, speed=55):
     _seq(spider, [[[45, 45, -50], [45, 0, -50], [45, 0, -50], [45, 45, -50]]], 60)
 
 
-def push_up(spider, speed=35):
+def push_up(spider, speed=30):
+    # DETUNED for power: gentler ready (slower), 2 reps not 4, longer settle.
     ready = [
         [[45, 45, -50], [45, 0, -50], [45, 0, -50], [45, 45, -50]],
         [[60, 10, -60], [60, 0, -60], [20, 60, 10], [10, 65, -40]],
@@ -171,11 +189,9 @@ def push_up(spider, speed=35):
         [[70, 0, -40], [70, 0, -40], [0, 130, -40], [0, 130, -40]],
         [[70, 0, -76], [70, 0, -76], [0, 130, -40], [0, 130, -40]],
     ]
-    _seq(spider, ready, 70)
-    for coord in reps:
-        spider.do_step(coord, speed)
-        sleep(0.1)
-    _seq(spider, [[[45, 45, -50], [45, 0, -50], [45, 0, -50], [45, 45, -50]]], 60)
+    _seq(spider, ready, 45)
+    _seq(spider, reps, speed, steps=5, dt=0.05)
+    _seq(spider, [[[45, 45, -50], [45, 0, -50], [45, 0, -50], [45, 45, -50]]], 50)
 
 
 def twist(spider, speed=55):
