@@ -53,9 +53,18 @@ def camera():
     if _cam is None:
         from picamera2 import Picamera2
         c = Picamera2()
-        c.configure(c.create_still_configuration(main={"size": (1280, 720)}))
+        # 1296x972 = OV5647 v1 binned FULL-FOV mode (1280x720 crops the sensor =
+        # narrow view). 4:3 keeps the whole field of view.
+        cfg = c.create_still_configuration(main={"size": (1296, 972)})
+        c.configure(cfg)
         c.start()
-        time.sleep(0.5)
+        # Let auto-exposure / AWB converge before first capture (0.5s was too
+        # short -> dark frames in dim rooms).
+        try:
+            c.set_controls({"AeEnable": True, "AwbEnable": True})
+        except Exception:
+            pass
+        time.sleep(1.8)
         _cam = c
     return _cam
 
@@ -212,15 +221,30 @@ def move():
     action = j.get("action")
     if not action:
         return jsonify(error="action required (forward/backward/turn left/turn right/...)"), 400
-    steps = int(j.get("steps", 1)); speed = int(j.get("speed", 50))
+    a = action.strip().lower()
+    speed = int(j.get("speed", 50))
+    # Calibration: ~2 cm per forward/backward step, ~22.5 deg per turn step.
+    # Accept steps OR a distance (cm) / angle (degrees) and convert.
+    CM_PER_STEP, DEG_PER_STEP = 2.0, 22.5
+    if j.get("steps") is not None:
+        steps = int(j["steps"])
+    elif j.get("degrees") is not None and "turn" in a:
+        steps = round(abs(float(j["degrees"])) / DEG_PER_STEP)
+    elif j.get("cm") is not None and a in ("forward", "backward"):
+        steps = round(abs(float(j["cm"])) / CM_PER_STEP)
+    else:
+        steps = 1
+    steps = max(1, min(30, int(steps)))
     with _lock_motion:
         c = crawler()
         if j.get("auto_stand"):
             c.do_step("stand", max(30, speed // 2)); time.sleep(0.6); _standing = True
-        c.do_action(action, steps, speed); _standing = True
+        c.do_action(a, steps, speed); _standing = True
         if j.get("auto_sit"):
             c.do_step("sit", max(30, speed // 2)); time.sleep(0.4); _standing = False
-    return jsonify(ok=True, action=action, steps=steps, speed=speed, standing=_standing)
+    return jsonify(ok=True, action=a, steps=steps, speed=speed, standing=_standing,
+                   approx_cm=round(steps * CM_PER_STEP, 1) if a in ("forward", "backward") else None,
+                   approx_deg=round(steps * DEG_PER_STEP, 1) if "turn" in a else None)
 
 
 @app.post("/pose")
