@@ -19,22 +19,38 @@ def _lerp(a, b, t):
     return [[a[i][k] + (b[i][k] - a[i][k]) * t for k in range(3)] for i in range(len(a))]
 
 
-def _seq(spider, frames, speed, steps=5, dt=0.0):
-    """Play keyframes with coordinate interpolation between consecutive frames.
+def _ease(t):
+    """Smoothstep ease-in/ease-out — natural accel/decel vs constant velocity."""
+    return t * t * (3.0 - 2.0 * t)
 
-    `steps` sub-frames are inserted per transition -> smoother motion AND smaller
-    per-step servo deltas (gentler current draw). `dt` optionally paces each
-    sub-frame. steps=1 reproduces the old chunky behavior.
+
+def _seq(spider, frames, speed=50, steps=None, dt=None, ease=True, max_step_mm=4.0):
+    """Smooth fixed-cadence pose player (low jitter).
+
+    Each segment is adaptively subdivided so every micro-step moves a small, even
+    coordinate delta (~max_step_mm). Micro-steps run at HIGH internal servo speed
+    (near-instant for a tiny delta) and are paced by a steady `dt`, so motion is
+    continuous rather than ramp-and-stop at each keyframe. `speed` scales cadence
+    (higher = faster). `ease` applies smoothstep accel/decel. Pass explicit
+    `steps`/`dt` to override (e.g. rhythmic bounces).
     """
     if not frames:
         return
-    spider.do_step(frames[0], speed)
+    if dt is None:
+        dt = max(0.008, 0.035 - speed * 0.0004)  # ~speed30:23ms 50:15ms 80:8ms
+    spider.do_step(frames[0], 90)
     prev = frames[0]
     for frame in frames[1:]:
-        for s in range(1, steps + 1):
-            spider.do_step(_lerp(prev, frame, s / steps), speed)
-            if dt:
-                sleep(dt)
+        if steps is None:
+            md = max((abs(frame[i][k] - prev[i][k])
+                      for i in range(len(frame)) for k in range(3)), default=0.0)
+            n = max(2, int(md / max_step_mm))
+        else:
+            n = steps
+        for s in range(1, n + 1):
+            t = s / n
+            spider.do_step(_lerp(prev, frame, _ease(t) if ease else t), 90)
+            sleep(dt)
         prev = frame
 
 

@@ -136,6 +136,28 @@ def stats():
         bot["offset_file"] = Picrawler.OFFSET_FILE
     except Exception:
         pass
+    # Per-servo COMMANDED state (3-pin servos have no feedback, so this is the
+    # last commanded angle + calibration offset, not a measured value). Only
+    # available once the crawler exists (after the first motion) — we never
+    # construct it here, since constructing snaps all servos.
+    if _crawler is not None:
+        try:
+            pins = list(getattr(_crawler, "PIN_LIST", []))
+            pos = list(getattr(_crawler, "servo_positions", []))
+            off = list(getattr(_crawler, "offset", []))
+            legs = ["FR", "FL", "RL", "RR"]
+            joints = ["knee", "thigh", "hip"]
+            bot["servos"] = [
+                {"i": i, "leg": legs[i // 3], "joint": joints[i % 3],
+                 "header": pins[i] if i < len(pins) else None,
+                 "angle": round(float(pos[i]), 1),
+                 "offset": round(float(off[i]), 2) if i < len(off) else None}
+                for i in range(min(12, len(pos)))
+            ]
+            bot["coords"] = [[round(float(v), 1) for v in c]
+                             for c in getattr(_crawler, "current_coord", [])]
+        except Exception:
+            pass
     return jsonify(power=_battery(), pi=pi, bot=bot)
 
 
