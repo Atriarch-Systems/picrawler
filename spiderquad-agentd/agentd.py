@@ -15,6 +15,8 @@ Trust model: bind LAN (local/VPN only), no auth -- matches the other surfaces.
 import io, os, time, shutil, subprocess, tempfile, threading
 from flask import Flask, request, jsonify, Response
 
+import behaviors  # named expressive behaviors (same dir)
+
 MIC = os.environ.get("SQ_MIC", "plughw:3,0")
 SPK = os.environ.get("SQ_SPK", "plughw:CARD=sndrpihifiberry,DEV=0")
 PORT = int(os.environ.get("SQ_PORT", "8970"))
@@ -206,6 +208,50 @@ def pose():
         else:
             return jsonify(error="name or coords required"), 400
     return jsonify(ok=True, standing=_standing)
+
+
+@app.get("/behaviors")
+def behaviors_list():
+    """List everything /action accepts, grouped."""
+    return jsonify(
+        locomotion=["forward", "backward", "turn left", "turn right",
+                    "turn left angle", "turn right angle"],
+        poses=["stand", "sit"],
+        actions=["dance"],
+        expressions=sorted(behaviors.EXPRESSIONS.keys()),
+    )
+
+
+@app.post("/action")
+def action():
+    """Run any named behavior: a gait, a pose, the library 'dance', or an
+    expressive sequence (wave/nod/excited/...). See GET /behaviors."""
+    global _standing
+    j = request.get_json(force=True, silent=True) or {}
+    name = (j.get("name") or "").strip()
+    if not name:
+        return jsonify(error="name required", hint="GET /behaviors"), 400
+    speed = j.get("speed")
+    steps = int(j.get("steps", 1))
+    with _lock_motion:
+        c = crawler()
+        if name in behaviors.EXPRESSIONS:
+            fn = behaviors.EXPRESSIONS[name]
+            if speed:
+                fn(c, int(speed))
+            else:
+                fn(c)
+            _standing = name not in behaviors.NON_STANDING
+        elif name in ("forward", "backward", "turn left", "turn right",
+                      "turn left angle", "turn right angle", "dance"):
+            c.do_action(name, steps, int(speed) if speed else 60)
+            _standing = True
+        elif name in ("stand", "sit"):
+            c.do_step(name, int(speed) if speed else 45)
+            _standing = (name == "stand")
+        else:
+            return jsonify(error=f"unknown action '{name}'", hint="GET /behaviors"), 400
+    return jsonify(ok=True, action=name, standing=_standing)
 
 
 @app.post("/speak")
