@@ -4,11 +4,28 @@ import os
 import time
 import math
 
+def _picrawler_config_path():
+    """Resolve the invoking users picrawler offset-config path.
+
+    Under sudo HOME is /root, which silently splits calibration between
+    /root/.config and the real users ~/.config. Resolve SUDO_USER so the
+    same offset file is used whether or not the command runs under sudo.
+    """
+    import pwd
+    user = os.environ.get('SUDO_USER') or os.environ.get('USER') or os.environ.get('LOGNAME')
+    if user and user != 'root':
+        try:
+            return os.path.join(pwd.getpwnam(user).pw_dir, '.config', '.picrawler.config')
+        except KeyError:
+            pass
+    return os.path.expanduser('~/.config/.picrawler.config')
+
+
 class Picrawler(Robot):
     A = 48
     B = 78
     C = 33
-    OFFSET_FILE = os.path.expanduser('~/.config/.picrawler.config')
+    OFFSET_FILE = _picrawler_config_path()
     PIN_LIST = [9, 10, 11, 3, 4, 5, 0, 1, 2, 6, 7, 8]
 
     def __init__(self, pin_list=PIN_LIST, init_angles=None):  

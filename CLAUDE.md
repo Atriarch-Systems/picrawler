@@ -77,7 +77,7 @@ Re-exported from `robot_hat.llm`: `OpenAI`, `Ollama`, `Doubao`, `DeepSeek`, `Gem
 
 ## Running examples
 
-All examples must run on the Raspberry Pi with `sudo` (required by `robot_hat` for GPIO/servo access). Examples are numbered to match the online course at <https://docs.sunfounder.com/projects/pi-crawler/en/latest/python/play_with_python.html>.
+Run examples as the **normal user (no `sudo`)** when that user is in the `gpio`, `i2c`, and `spi` groups (the case on this unit); `robot_hat` only needs `sudo` for GPIO/servo access when those groups are missing. Avoid `sudo`: under it `HOME=/root`, which historically split servo calibration between `/root/.config` and the real user's `~/.config`. As of the `atriarch` branch, `Picrawler.OFFSET_FILE` resolves `SUDO_USER`'s home so this can no longer happen -- but running without `sudo` remains the norm. Examples are numbered to match the online course at <https://docs.sunfounder.com/projects/pi-crawler/en/latest/python/play_with_python.html>.
 
 ```bash
 # Core course examples (0-13)
